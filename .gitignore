@@ -1,0 +1,14 @@
+.coverage
+.stestr/
+.testrepository/
+.tox/
+.venv/
+AUTHORS
+ChangeLog
+__pycache__/
+*.egg-info/
+*.py[cod]
+build/
+cover/
+dist/
+
