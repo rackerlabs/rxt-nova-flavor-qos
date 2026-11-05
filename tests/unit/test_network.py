@@ -23,6 +23,7 @@ from rxt_nova_flavor_qos import network
 
 INSTANCE_UUID = "2b3b27f3-e7f4-46f8-a48a-f999b1ad4317"
 FLAVOR_ID = "d99ebe55-988d-41d5-a387-4fce42aadb68"
+MIGRATION_UUID = "5a8473d1-6ad6-4422-a075-04f342c329c9"
 
 
 class FlavorQosNeutronAPITestCase(unittest.TestCase):
@@ -36,12 +37,23 @@ class FlavorQosNeutronAPITestCase(unittest.TestCase):
             flavor=SimpleNamespace(flavorid=FLAVOR_ID),
         )
         self.migration = SimpleNamespace(
-            uuid="migration-id",
+            uuid=MIGRATION_UUID,
             old_instance_type_id=1,
             new_instance_type_id=2,
         )
         self.client = mock.Mock()
         self.client.list_ports.return_value = {"ports": []}
+
+    def test_marker_key_contract(self):
+        self.assertEqual("nova_flavor_id", constants.NOVA_FLAVOR_ID)
+        self.assertEqual(
+            "nova_flavor_instance_uuid",
+            constants.NOVA_FLAVOR_INSTANCE_UUID,
+        )
+        self.assertEqual(
+            "nova_flavor_migration_uuid",
+            constants.NOVA_FLAVOR_MIGRATION_UUID,
+        )
 
     def _finish(self, parent_return="parent-result"):
         parent = mock.patch.object(
@@ -91,6 +103,7 @@ class FlavorQosNeutronAPITestCase(unittest.TestCase):
                         "allocation": "rp-uuid",
                         constants.NOVA_FLAVOR_ID: FLAVOR_ID,
                         constants.NOVA_FLAVOR_INSTANCE_UUID: INSTANCE_UUID,
+                        constants.NOVA_FLAVOR_MIGRATION_UUID: MIGRATION_UUID,
                     },
                 },
             },
@@ -114,6 +127,7 @@ class FlavorQosNeutronAPITestCase(unittest.TestCase):
                 "binding:profile": {
                     constants.NOVA_FLAVOR_ID: FLAVOR_ID,
                     constants.NOVA_FLAVOR_INSTANCE_UUID: INSTANCE_UUID,
+                    constants.NOVA_FLAVOR_MIGRATION_UUID: MIGRATION_UUID,
                 },
             }],
         }
@@ -121,6 +135,45 @@ class FlavorQosNeutronAPITestCase(unittest.TestCase):
         self._finish()
 
         self.client.update_port.assert_not_called()
+
+    def test_new_migration_rewrites_matching_flavor_marker(self):
+        old_migration_uuid = "dfd89f21-8f52-45f6-9ff0-71cde33482ab"
+        self.client.list_ports.return_value = {
+            "ports": [{
+                "id": "port-1",
+                "binding:profile": {
+                    constants.NOVA_FLAVOR_ID: FLAVOR_ID,
+                    constants.NOVA_FLAVOR_INSTANCE_UUID: INSTANCE_UUID,
+                    constants.NOVA_FLAVOR_MIGRATION_UUID:
+                        old_migration_uuid,
+                },
+            }],
+        }
+
+        self._finish()
+
+        profile = self.client.update_port.call_args.args[1]["port"][
+            nova_constants.BINDING_PROFILE]
+        self.assertEqual(MIGRATION_UUID, profile[
+            constants.NOVA_FLAVOR_MIGRATION_UUID])
+
+    def test_missing_migration_uuid_returns_stock_result(self):
+        self.migration.uuid = None
+
+        result, parent, client_factory = self._finish()
+
+        self.assertEqual("parent-result", result)
+        parent.assert_called_once()
+        client_factory.assert_not_called()
+
+    def test_malformed_migration_uuid_returns_stock_result(self):
+        self.migration.uuid = "not-a-uuid"
+
+        result, parent, client_factory = self._finish()
+
+        self.assertEqual("parent-result", result)
+        parent.assert_called_once()
+        client_factory.assert_not_called()
 
     def test_port_failure_does_not_block_other_ports_or_nova(self):
         self.client.list_ports.return_value = {
