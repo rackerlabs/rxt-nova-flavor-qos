@@ -12,3 +12,4 @@
 
 NOVA_FLAVOR_ID = "nova_flavor_id"
 NOVA_FLAVOR_INSTANCE_UUID = "nova_flavor_instance_uuid"
+NOVA_FLAVOR_MIGRATION_UUID = "nova_flavor_migration_uuid"

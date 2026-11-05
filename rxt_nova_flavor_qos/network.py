@@ -13,6 +13,7 @@
 import copy
 
 from oslo_log import log as logging
+from oslo_utils import uuidutils
 
 from nova.i18n import _
 from nova.network import constants as nova_constants
@@ -58,6 +59,7 @@ class FlavorQosNeutronAPI(neutron.API):
 
         instance_uuid = str(instance.uuid)
         flavor_id = self._get_public_flavor_id(instance)
+        migration_uuid = self._get_migration_uuid(migration)
         client = neutron.get_client(context, admin=True)
         ports = client.list_ports(
             device_id=instance_uuid,
@@ -66,11 +68,12 @@ class FlavorQosNeutronAPI(neutron.API):
 
         for port in ports:
             self._publish_port_target_flavor(
-                client, port, instance, migration, flavor_id, instance_uuid)
+                client, port, instance, flavor_id, instance_uuid,
+                migration_uuid)
 
     def _publish_port_target_flavor(
-            self, client, port, instance, migration, flavor_id,
-            instance_uuid):
+            self, client, port, instance, flavor_id, instance_uuid,
+            migration_uuid):
         port_id = port.get("id")
         try:
             profile = copy.deepcopy(neutron.get_binding_profile(port))
@@ -81,11 +84,15 @@ class FlavorQosNeutronAPI(neutron.API):
                 str(profile.get(constants.NOVA_FLAVOR_ID, "")) == flavor_id
                 and str(profile.get(
                     constants.NOVA_FLAVOR_INSTANCE_UUID, "")) == instance_uuid
+                and str(profile.get(
+                    constants.NOVA_FLAVOR_MIGRATION_UUID, ""))
+                == migration_uuid
             ):
                 return
 
             profile[constants.NOVA_FLAVOR_ID] = flavor_id
             profile[constants.NOVA_FLAVOR_INSTANCE_UUID] = instance_uuid
+            profile[constants.NOVA_FLAVOR_MIGRATION_UUID] = migration_uuid
             client.update_port(
                 port_id,
                 {
@@ -102,7 +109,7 @@ class FlavorQosNeutronAPI(neutron.API):
                     "flavor_id": flavor_id,
                     "instance_uuid": instance_uuid,
                     "port_id": port_id,
-                    "migration_uuid": getattr(migration, "uuid", None),
+                    "migration_uuid": migration_uuid,
                 },
                 instance=instance,
             )
@@ -116,7 +123,7 @@ class FlavorQosNeutronAPI(neutron.API):
                     "flavor_id": flavor_id,
                     "instance_uuid": instance_uuid,
                     "port_id": port_id,
-                    "migration_uuid": getattr(migration, "uuid", None),
+                    "migration_uuid": migration_uuid,
                 },
                 instance=instance,
             )
@@ -131,3 +138,12 @@ class FlavorQosNeutronAPI(neutron.API):
             raise ValueError(_(
                 "instance target flavor has no public flavor ID"))
         return str(flavor_id).strip()
+
+    @staticmethod
+    def _get_migration_uuid(migration):
+        migration_uuid = getattr(migration, "uuid", None)
+        migration_uuid = (str(migration_uuid).strip()
+                          if migration_uuid is not None else "")
+        if not uuidutils.is_uuid_like(migration_uuid):
+            raise ValueError(_("migration has no valid UUID"))
+        return migration_uuid

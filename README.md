@@ -21,13 +21,16 @@ the port binding profile:
 {
   "binding:profile": {
     "nova_flavor_id": "d99ebe55-988d-41d5-a387-4fce42aadb68",
-    "nova_flavor_instance_uuid": "2b3b27f3-e7f4-46f8-a48a-f999b1ad4317"
+    "nova_flavor_instance_uuid": "2b3b27f3-e7f4-46f8-a48a-f999b1ad4317",
+    "nova_flavor_migration_uuid": "5a8473d1-6ad6-4422-a075-04f342c329c9"
   }
 }
 ```
 
 The companion instance UUID prevents a marker retained on a detached port
-from being trusted after that port is attached to a different server.
+from being trusted after that port is attached to a different server. The
+migration UUID makes every resize generation distinct, including a resize
+back to a flavor used by an earlier migration and a same-host resize.
 
 ## Execution order
 
@@ -35,8 +38,8 @@ For a flavor-changing resize or resize revert:
 
 1. Stock Nova performs `migrate_instance_finish()`.
 2. The adapter lists the instance's Neutron ports.
-3. It merges the target public flavor ID and instance UUID into each binding
-   profile without changing unrelated profile fields.
+3. It merges the target public flavor ID, instance UUID, and migration UUID
+   into each binding profile without changing unrelated profile fields.
 4. Each successful profile update causes the Neutron service plugin to run
    its normal `PORT AFTER_UPDATE` reconciliation.
 5. Failures are logged per port and are not raised into Nova.
